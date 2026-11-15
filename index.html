@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>الحضور والانصراف</title>
+<style>
+  :root { --bg:#f3f5f9; --card:#fff; --ink:#1b2430; --mute:#6b7685; --brand:#ff5a00; --ok:#1b8f4d; --bad:#c62828; --warn:#e68a00; --line:#e4e8ee; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:'Segoe UI',Tahoma,Arial,sans-serif; }
+  header { background:var(--brand); color:#fff; padding:18px 16px 56px; }
+  header h1 { margin:0; font-size:18px; font-weight:700; }
+  header p { margin:4px 0 0; opacity:.9; font-size:13px; }
+  main { max-width:520px; margin:-40px auto 24px; padding:0 14px; }
+  .card { background:var(--card); border-radius:16px; padding:16px; margin-bottom:12px; box-shadow:0 2px 10px rgba(20,30,50,.07); }
+  .tabs { display:flex; gap:8px; margin-bottom:12px; }
+  .tabs button { flex:1; padding:11px; border:0; border-radius:12px; background:#fff; color:var(--mute); font-size:14px; font-weight:600; box-shadow:0 1px 4px rgba(20,30,50,.06); }
+  .tabs button.on { background:var(--ink); color:#fff; }
+  .row { display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .row:last-child { border-bottom:0; }
+  .row span:first-child { color:var(--mute); }
+  .chip { display:inline-block; padding:3px 10px; border-radius:99px; font-size:12px; font-weight:700; }
+  .chip.ok { background:#e3f5ea; color:var(--ok); } .chip.warn { background:#fff1d6; color:var(--warn); } .chip.bad { background:#fde4e4; color:var(--bad); } .chip.mute { background:#eceff3; color:var(--mute); }
+  .btn { width:100%; padding:16px; border:0; border-radius:14px; font-size:17px; font-weight:700; color:#fff; background:var(--brand); margin-top:8px; }
+  .btn.green { background:var(--ok); } .btn.dark { background:var(--ink); } .btn.ghost { background:#eef1f5; color:var(--ink); }
+  .btn:disabled { opacity:.5; }
+  .msg { text-align:center; color:var(--mute); padding:8px 0; font-size:14px; line-height:1.6; }
+  label { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; font-size:15px; font-family:inherit; background:#fff; }
+  .toast { position:fixed; bottom:20px; left:14px; right:14px; max-width:492px; margin:auto; padding:14px; border-radius:12px; color:#fff; font-size:14px; text-align:center; z-index:50; display:none; }
+  .toast.ok { background:var(--ok); } .toast.bad { background:var(--bad); }
+  #cam { position:fixed; inset:0; background:#000; z-index:40; display:none; flex-direction:column; }
+  #cam video { flex:1; width:100%; object-fit:cover; transform:scaleX(-1); background:#000; min-height:0; }
+  #cam .bar { padding:14px; background:#111; color:#fff; font-size:13px; text-align:center; }
+  #cam .bar .btn { margin-top:10px; }
+  .gps { display:flex; justify-content:center; gap:8px; align-items:center; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#888; } .dot.g { background:#2ecc71; } .dot.y { background:#f1c40f; } .dot.r { background:#e74c3c; }
+  .small { font-size:12px; color:var(--mute); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat { background:#f6f8fb; border-radius:12px; padding:12px; text-align:center; }
+  .stat b { display:block; font-size:20px; margin-bottom:2px; }
+  .stat span { font-size:12px; color:var(--mute); }
+  .stat.warn b { color:var(--warn); } .stat.bad b { color:var(--bad); } .stat.ok b { color:var(--ok); }
+  .drow { padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .drow:last-child { border-bottom:0; }
+  .drow .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<div id="login" class="hidden">
+  <header><h1>الحضور والانصراف</h1><p>سجّل الدخول بالإيميل والرمز</p></header>
+  <main>
+    <div class="card">
+      <label style="margin-top:0">الإيميل</label>
+      <input type="email" id="lgEmail" dir="ltr" autocomplete="username" inputmode="email">
+      <label>الرمز (PIN)</label>
+      <input type="password" id="lgPin" dir="ltr" autocomplete="current-password" inputmode="numeric">
+      <button class="btn" id="lgBtn">دخول</button>
+      <div class="msg" id="lgMsg"></div>
+    </div>
+  </main>
+</div>
+<div id="app" class="hidden">
+<header>
+  <h1 id="hName">...</h1>
+  <p id="hSub">جاري التحميل</p>
+  <p><a href="#" id="bLogout" style="color:#fff;font-size:12px">تسجيل خروج</a></p>
+</header>
+<main>
+  <div class="tabs">
+    <button id="tHome" class="on">الرئيسية</button>
+    <button id="tReq">طلباتي</button>
+    <button id="tSum">ملخصي</button>
+  </div>
+
+  <section id="home">
+    <div class="card" id="shiftCard">
+      <div class="row"><span>الشفت</span><b id="sName">-</b></div>
+      <div class="row"><span id="lTime">الموعد</span><b id="sTime" dir="ltr">-</b></div>
+      <div class="row"><span id="lLoc">الموقع</span><b id="sLoc">-</b></div>
+      <div class="row"><span>الحالة</span><span id="sState" class="chip mute">-</span></div>
+      <div class="row hidden" id="rIn"><span>وقت الحضور</span><b id="sIn" dir="ltr">-</b></div>
+      <div class="row hidden" id="rProof"><span>آخر إثبات تواجد</span><b id="sProof">-</b></div>
+    </div>
+    <div class="card hidden" id="pendCard" style="border:2px solid var(--warn)">
+      <div class="msg" id="pendMsg" style="color:var(--ink)"></div>
+      <button class="btn dark hidden" id="bConfirm">تأكيد الموقع</button>
+      <button class="btn hidden" id="bDispatch">التقاط صورة في منطقة الديسباتش</button>
+    </div>
+    <div class="card">
+      <div class="msg" id="homeMsg"></div>
+      <button class="btn green hidden" id="bIn">تسجيل الحضور</button>
+      <button class="btn dark hidden" id="bProof">إرسال إثبات تواجد</button>
+      <button class="btn hidden" id="bOut">تسجيل الانصراف</button>
+    </div>
+  </section>
+
+  <section id="sum" class="hidden">
+    <div class="card">
+      <label style="margin-top:0">الدورة</label>
+      <select id="sCycle"></select>
+      <div class="small" id="sPeriod" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="grid">
+        <div class="stat ok"><b id="kDays">-</b><span>أيام العمل</span></div>
+        <div class="stat bad"><b id="kAbs">-</b><span>أيام الغياب</span></div>
+        <div class="stat warn"><b id="kLate">-</b><span>التأخير</span></div>
+        <div class="stat warn"><b id="kEarly">-</b><span>الانصراف المبكر</span></div>
+        <div class="stat ok"><b id="kOver">-</b><span>الأوفر تايم</span></div>
+        <div class="stat bad"><b id="kLoc">-</b><span>أيام مشكلة الموقع</span></div>
+        <div class="stat"><b id="kPerm">-</b><span>أذونات متبقية</span></div>
+        <div class="stat"><b id="kLeave">-</b><span>رصيد الإجازات (يوم)</span></div>
+      </div>
+      <div class="small" id="kNote" style="margin-top:10px"></div>
+    </div>
+    <div class="card"><b>تفاصيل الأيام</b><div id="sDays" style="margin-top:6px"></div></div>
+  </section>
+
+  <section id="req" class="hidden">
+    <div class="card">
+      <b>طلب إذن</b> <span class="small">(المتبقي هذه الدورة: <span id="permLeft">-</span> — كل إذن حتى ساعتين، قبل بداية الشفت، ويسري بعد موافقة الإدارة)</span>
+      <label>نوع الإذن</label>
+      <select id="pType"><option>تأخر في الحضور</option><option>انصراف مبكر</option></select>
+      <label>يوم الإذن</label>
+      <input type="date" id="pDate">
+      <button class="btn dark" id="bPerm">إرسال الطلب</button>
+    </div>
+    <div class="card">
+      <b>طلب إجازة سنوية</b> <span class="small">(رصيدك المتبقي: <span id="leaveLeft">-</span> يوم — قبلها بـ 24 ساعة على الأقل)</span>
+      <label>من</label><input type="date" id="lFrom">
+      <label>إلى</label><input type="date" id="lTo">
+      <label>السبب</label><textarea id="lReason" rows="2" maxlength="200"></textarea>
+      <button class="btn dark" id="bLeave">إرسال الطلب</button>
+    </div>
+    <div class="card"><b>طلباتي</b><div id="myList" class="small" style="margin-top:8px">...</div></div>
+  </section>
+</main>
+</div>
+
+<div id="cam">
+  <video id="video" autoplay playsinline muted></video>
+  <div class="bar">
+    <div class="gps"><span class="dot" id="gpsDot"></span><span id="gpsTxt">جاري تحديد الموقع...</span></div>
+    <button class="btn" id="bShot" disabled>التقط الصورة</button>
+    <button class="btn ghost" id="bCancel">إلغاء</button>
+  </div>
+</div>
+<canvas id="canvas" class="hidden"></canvas>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var state = null, busy = false, stream = null, watchId = null, best = null, kind = null, skewBoot = 0, pendUntil = 0;
+
+  // ---------- أدوات ----------
+  var API_URL = 'https://script.google.com/macros/s/AKfycbwkEnaZPoe_e5fXMu8cwbO9B5SDDlAsA_FdSH2p3quk7y_4zn0Wnj5GKwoF0L356B-04w/exec';
+  function callApi(payload) {
+    return fetch(API_URL, { method: 'POST', redirect: 'follow', body: JSON.stringify(payload) }).then(function (r) { return r.json(); });
+  }
+  var memToken = '';
+  function token() { try { return localStorage.getItem('att_tok') || memToken; } catch (e) { return memToken; } }
+  function setToken(t) { memToken = t || ''; try { if (t) localStorage.setItem('att_tok', t); else localStorage.removeItem('att_tok'); } catch (e) { /* تجاهل */ } }
+  // كل النداءات تمر على api() في السيرفر بتوكن موقّع. لو الجلسة انتهت يرجع لشاشة الدخول.
+  function gs(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      callApi({ fn: fn, token: token(), args: args }).then(function (res) {
+        if (res && res.auth) showLogin(res.message);
+        resolve(res);
+      }, reject);
+    });
+  }
+  function toast(msg, ok) {
+    var t = $('toast'); t.textContent = msg; t.className = 'toast ' + (ok ? 'ok' : 'bad'); t.style.display = 'block';
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.style.display = 'none'; }, 4500);
+  }
+  function deviceId() {
+    try {
+      var d = localStorage.getItem('att_dev');
+      if (!d) { d = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); localStorage.setItem('att_dev', d); }
+      return d;
+    } catch (e) { return window.__dev || (window.__dev = 'tmp' + Math.random().toString(16).slice(2, 12)); }
+  }
+  function hex(buf) { return Array.from(new Uint8Array(buf)).map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  function cairo(ms) {
+    return new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(ms));
+  }
+
+  // ---------- العرض ----------
+  function setChip(text, cls) { var c = $('sState'); c.textContent = text; c.className = 'chip ' + cls; }
+  function render() {
+    var s = state; if (!s) return;
+    $('hName').textContent = 'أهلاً ' + s.name;
+    $('hSub').textContent = s.email;
+    $('permLeft').textContent = s.permLeft;
+    ['bIn', 'bOut', 'bProof'].forEach(function (b) { $(b).classList.add('hidden'); });
+    $('rIn').classList.add('hidden'); $('rProof').classList.add('hidden');
+    $('homeMsg').textContent = s.message || '';
+    if (s.shift) { $('sName').textContent = s.shift.name || s.shift.id; $('sTime').textContent = (s.shift.start || '') + ' - ' + (s.shift.end || ''); }
+    else { $('sName').textContent = '-'; $('sTime').textContent = '-'; }
+    $('lTime').textContent = 'الموعد'; $('lLoc').textContent = 'الموقع'; $('sLoc').textContent = '-';
+    if (s.mode === 'CAN_CHECKIN' && s.allowedShifts && s.allowedShifts.length > 1) {
+      // أكتر من موعد مسموح: البصمة في أي واحد فيهم سليمة
+      $('lTime').textContent = 'المواعيد المسموحة';
+      $('sTime').textContent = s.allowedShifts.map(function (x) { return x.start + '-' + x.end; }).join('  أو  ');
+    }
+    if (s.mode === 'CAN_CHECKIN' && s.locations && s.locations.length) {
+      $('lLoc').textContent = s.locations.length > 1 ? 'المواقع المسموحة' : 'الموقع';
+      $('sLoc').textContent = s.locations.join(' / ');
+    }
+    if (s.mode === 'OPEN' && s.location) { $('lLoc').textContent = 'موقع الحضور'; $('sLoc').textContent = s.location; }
+    if (s.mode === 'CAN_CHECKIN') { setChip('جاهز للحضور', 'warn'); $('bIn').classList.remove('hidden'); $('homeMsg').textContent = 'التأخير يُحتسب بعد ' + s.graceMin + ' دقيقة من بداية الشفت'; }
+    else if (s.mode === 'OPEN') {
+      setChip(s.late > 0 ? 'حاضر (متأخر ' + s.late + ' د)' : 'حاضر', s.late > 0 ? 'warn' : 'ok');
+      $('rIn').classList.remove('hidden'); $('sIn').textContent = s.checkInTime;
+      $('rProof').classList.remove('hidden'); $('sProof').textContent = 'منذ ' + s.minSinceProof + ' دقيقة';
+      $('bOut').classList.remove('hidden');
+      $('bProof').classList.remove('hidden'); $('bProof').disabled = !s.proofAllowed;
+      $('homeMsg').textContent = s.minSinceProof >= 30 ? 'مطلوب إرسال إثبات تواجد الآن'
+        : (s.location ? 'الانصراف وإثبات التواجد لازم يكونوا من نفس موقع الحضور: ' + s.location : '');
+    }
+    else if (s.mode === 'DONE') setChip('تم', 'ok');
+    else setChip('لا يوجد شفت', 'mute');
+
+    var pc = $('pendCard'), pend = s.pending;
+    pc.classList.toggle('hidden', !pend);
+    $('bConfirm').classList.add('hidden'); $('bDispatch').classList.add('hidden');
+    if (pend) {
+      ['bIn', 'bOut', 'bProof'].forEach(function (b) { $(b).classList.add('hidden'); });
+      var what = pend.kind === 'in' ? 'الحضور' : pend.kind === 'out' ? 'الانصراف' : 'إثبات التواجد';
+      if (pend.stage === 'WAIT') {
+        pendUntil = Date.now() + pend.waitLeftSec * 1000;
+        $('pendMsg').textContent = 'طلب ' + what + ' بانتظار تأكيد الموقع. ابقَ في مكانك داخل الفرع.';
+        $('bConfirm').classList.remove('hidden'); tick();
+      } else {
+        $('pendMsg').textContent = 'الموقع ما زال يحتاج تأكيد. التقط صورة جديدة في منطقة الديسباتش، وستحل محل الصورة الأولى.';
+        $('bDispatch').classList.remove('hidden');
+      }
+    }
+  }
+  function tick() {
+    var b = $('bConfirm'); if (b.classList.contains('hidden')) return;
+    var left = Math.ceil((pendUntil - Date.now()) / 1000);
+    if (left > 0) { b.disabled = true; b.textContent = 'تأكيد الموقع (بعد ' + left + ' ث)'; }
+    else { b.disabled = busy; b.textContent = 'تأكيد الموقع'; }
+  }
+
+  function refresh() {
+    var t0 = Date.now();
+    return gs('getBootstrap').then(function (s) {
+      if (!s || !s.ok) { $('hSub').textContent = (s && s.message) || 'غير مصرح'; return; }
+      skewBoot = (s.now + (Date.now() - t0) / 2) - Date.now();
+      state = s; render();
+    }).catch(function () { toast('تعذر تحميل البيانات، تأكد من الإنترنت', false); });
+  }
+
+  // ---------- الكاميرا والموقع ----------
+  function gpsUi(fix) {
+    var dot = $('gpsDot'), txt = $('gpsTxt');
+    if (!fix) { dot.className = 'dot'; txt.textContent = 'جاري تحديد الموقع...'; return; }
+    var a = Math.round(fix.coords.accuracy);
+    dot.className = 'dot ' + (a <= 15 ? 'g' : a <= 25 ? 'y' : 'r');
+    txt.textContent = 'دقة الموقع: ' + a + ' م' + (a > 25 ? ' (ضعيفة، اخرج لمكان مفتوح)' : '');
+    $('bShot').disabled = a > 25;
+  }
+  function startGps() {
+    best = null; gpsUi(null); $('bShot').disabled = true;
+    if (!navigator.geolocation) { $('gpsTxt').textContent = 'الموقع غير مدعوم'; return; }
+    watchId = navigator.geolocation.watchPosition(function (p) {
+      if (!best || p.coords.accuracy <= best.coords.accuracy || p.timestamp - best.timestamp > 20000) best = p;
+      gpsUi(best);
+    }, function (e) { $('gpsTxt').textContent = e.code === 1 ? 'فعّل إذن الموقع من إعدادات المتصفح' : 'تعذر تحديد الموقع'; $('gpsDot').className = 'dot r'; },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  }
+  function stopMedia() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    $('cam').style.display = 'none'; $('video').srcObject = null;
+  }
+  function freshFix() {
+    return new Promise(function (resolve, reject) {
+      if (best && Date.now() - best.timestamp < 12000) return resolve(best);
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 });
+    });
+  }
+
+  function openCamera(k) {
+    if (busy) return;
+    kind = k;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('الكاميرا غير متاحة في هذا المتصفح', false); return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }, audio: false }).then(function (s) {
+      stream = s; $('video').srcObject = s; $('cam').style.display = 'flex'; startGps();
+    }).catch(function (e) {
+      var n = (e && e.name) || 'Error', why = {
+        NotAllowedError: 'تم رفض إذن الكاميرا أو الصفحة ممنوعة من استخدامها. اسمح بالكاميرا من إعدادات الموقع في المتصفح ثم أعد تحميل الصفحة',
+        NotFoundError: 'لا توجد كاميرا أمامية في الجهاز',
+        NotReadableError: 'الكاميرا مستخدمة في تطبيق آخر. أغلقه وحاول مرة أخرى',
+        OverconstrainedError: 'إعدادات الكاميرا غير مدعومة في هذا الجهاز',
+        SecurityError: 'المتصفح منع الكاميرا في هذه الصفحة'
+      }[n] || 'تعذر تشغيل الكاميرا';
+      toast(why + ' (' + n + ': ' + ((e && e.message) || '') + ')', false);
+    });
+  }
+
+  // ---------- الالتقاط والإرسال ----------
+  function capture() {
+    if (busy) return; busy = true; $('bShot').disabled = true; $('bShot').textContent = 'جاري الإرسال...';
+    var dev = deviceId(), t0 = Date.now(), challenge, pos, skew = 0;
+    gs('getChallenge', dev).then(function (c) {
+      if (!c || !c.ok) throw new Error((c && c.message) || 'تعذر بدء العملية');
+      challenge = c;
+      // فرق ساعة الجهاز عن السيرفر، بتعويض نصف زمن الاتصال
+      skew = (c.serverNow + (Date.now() - t0) / 2) - Date.now();
+      return freshFix();
+    }).then(function (p) {
+      pos = p;
+      var v = $('video'), cv = $('canvas'), w = v.videoWidth, h = v.videoHeight;
+      if (!w || !h) throw new Error('الكاميرا لم تجهز بعد');
+      var maxW = 640, sc = Math.min(1, maxW / w); cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
+      var g = cv.getContext('2d');
+      g.save(); g.translate(cv.width, 0); g.scale(-1, 1); g.drawImage(v, 0, 0, cv.width, cv.height); g.restore(); // نفس اللي شافه الكابتن
+      var lines = [cairo(Date.now() + skew), state.name, pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6) + ' ±' + Math.round(pos.coords.accuracy) + 'م', '#' + challenge.nonce].concat(kind === 'dispatch' ? ['منطقة الديسباتش'] : []);
+      var fs = Math.max(12, Math.round(cv.width / 36)), bh = lines.length * (fs + 4) + 8;
+      g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(0, cv.height - bh, cv.width, bh);
+      g.fillStyle = '#fff'; g.font = 'bold ' + fs + 'px sans-serif'; g.textAlign = 'right';
+      lines.forEach(function (ln, i) { g.fillText(ln, cv.width - 8, cv.height - bh + (i + 1) * (fs + 4)); });
+      return new Promise(function (res) { cv.toBlob(res, 'image/jpeg', 0.72); });
+    }).then(function (blob) {
+      if (!blob) throw new Error('فشل التقاط الصورة');
+      return blob.arrayBuffer().then(function (buf) {
+        if (!(window.crypto && crypto.subtle)) throw new Error('المتصفح لا يدعم التحقق من الصورة');
+        return crypto.subtle.digest('SHA-256', buf).then(function (d) {
+          return new Promise(function (res) { var r = new FileReader(); r.onload = function () { res({ b64: r.result, sha: hex(d) }); }; r.readAsDataURL(blob); });
+        });
+      });
+    }).then(function (img) {
+      var payload = { nonce: challenge.nonce, deviceId: dev, photo: img.b64, sha: img.sha,
+        lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skew) };
+      var fn = kind === 'in' ? 'recordCheckIn' : kind === 'out' ? 'recordCheckOut' : kind === 'dispatch' ? 'submitDispatchPhoto' : 'recordProof';
+      return gs(fn, payload);
+    }).then(function (r) {
+      stopMedia();
+      toast((r && r.message) || 'تم', !!(r && r.ok));
+      return refresh();
+    }).catch(function (e) {
+      stopMedia(); toast((e && e.message) || 'فشل الإرسال، حاول مرة أخرى', false);
+    }).then(function () { busy = false; $('bShot').textContent = 'التقط الصورة'; });
+  }
+
+  // ---------- ملخصي ----------
+  function fmtMin(m) { m = Number(m) || 0; if (m < 60) return m + ' د'; var r = m % 60; return Math.floor(m / 60) + ' س' + (r ? ' ' + r + ' د' : ''); }
+  function loadSummary(label) {
+    $('sDays').textContent = 'جاري التحميل...';
+    gs('getMySummary', label || null).then(function (r) {
+      if (!r || !r.ok) { $('sDays').textContent = (r && r.message) || 'تعذر التحميل'; return; }
+      var sel = $('sCycle'); sel.textContent = '';
+      r.cycles.forEach(function (c, i) {
+        var o = document.createElement('option'); o.value = c; o.textContent = c + (i === 0 ? ' (الحالية)' : ''); if (c === r.label) o.selected = true; sel.appendChild(o);
+      });
+      $('sPeriod').textContent = 'من ' + r.start + ' إلى ' + r.end + (r.closed ? ' (مقفولة)' : ' — لحد النهارده ' + r.today);
+      var s = r.stats;
+      $('kDays').textContent = s.days; $('kAbs').textContent = s.absence; $('kLate').textContent = fmtMin(s.late);
+      $('kEarly').textContent = fmtMin(s.early); $('kOver').textContent = fmtMin(s.over); $('kLoc').textContent = s.locDays;
+      $('kPerm').textContent = s.permLeft; $('kLeave').textContent = s.leaveLeft;
+      $('kNote').textContent = 'ساعات العمل: ' + s.hours + ' — إجازات في الدورة: ' + s.leaveDays + ' يوم — التأخير والانصراف المبكر بعد خصم الأذونات المقبولة.';
+      var box = $('sDays'); box.textContent = '';
+      if (!r.days.length) { box.textContent = 'لا توجد أيام مسجلة في هذه الدورة بعد'; return; }
+      r.days.slice().reverse().forEach(function (d) {
+        var row = document.createElement('div'); row.className = 'drow';
+        var top = document.createElement('div'); top.className = 'top';
+        var a = document.createElement('b'); a.textContent = d.date;
+        var c = document.createElement('span'); c.textContent = d.status || '-';
+        c.className = 'chip ' + (d.status === 'حضور' ? 'ok' : d.status === 'غياب' ? 'bad' : d.status === 'إجازة' ? 'mute' : 'warn');
+        top.appendChild(a); top.appendChild(c); row.appendChild(top);
+        var parts = [];
+        if (d.loc) parts.push(d.loc);
+        if (d.inTime) parts.push('حضور ' + d.inTime);
+        if (d.outTime) parts.push('انصراف ' + d.outTime);
+        if (d.late) parts.push('تأخير ' + fmtMin(d.late));
+        if (d.early) parts.push('انصراف مبكر ' + fmtMin(d.early));
+        if (d.over) parts.push('أوفر تايم ' + fmtMin(d.over));
+        if (d.issue) parts.push('مشكلة موقع');
+        var det = document.createElement('div'); det.className = 'small'; det.textContent = parts.join(' · ');
+        row.appendChild(det); box.appendChild(row);
+      });
+    }).catch(function () { $('sDays').textContent = 'تعذر التحميل'; });
+  }
+
+  // ---------- الطلبات ----------
+  function loadMine() {
+    gs('getMyRequests').then(function (r) {
+      var box = $('myList'); box.textContent = '';
+      if (!r || !r.ok) { box.textContent = 'لا توجد بيانات'; return; }
+      $('permLeft').textContent = r.permLeft; $('leaveLeft').textContent = r.leave.left;
+      var add = function (txt, status) {
+        var d = document.createElement('div'); d.className = 'row';
+        var a = document.createElement('span'); a.textContent = txt; a.style.color = 'var(--ink)';
+        var b = document.createElement('span'); b.textContent = status;
+        b.className = 'chip ' + (status === 'مقبول' ? 'ok' : status === 'مرفوض' ? 'bad' : 'warn');
+        d.appendChild(a); d.appendChild(b); box.appendChild(d);
+      };
+      r.permissions.forEach(function (p) { add('إذن: ' + p.type + ' - ' + p.date, p.status); });
+      r.leaves.forEach(function (l) { add('إجازة: ' + l.from + ' → ' + l.to + ' (' + l.days + ' أيام)', l.status); });
+      if (!box.children.length) box.textContent = 'لا توجد طلبات';
+    });
+  }
+  function send(btn, fn, arg1, arg2) {
+    btn.disabled = true;
+    gs(fn, arg1, arg2).then(function (r) { toast(r.message, r.ok); if (r.ok) { loadMine(); refresh(); } })
+      .catch(function () { toast('فشل الإرسال', false); }).then(function () { btn.disabled = false; });
+  }
+
+  // ---------- الأحداث ----------
+  $('bIn').onclick = function () { openCamera('in'); };
+  $('bOut').onclick = function () { openCamera('out'); };
+  $('bProof').onclick = function () { openCamera('proof'); };
+  $('bDispatch').onclick = function () { openCamera('dispatch'); };
+  $('bConfirm').onclick = function () {
+    if (busy || Date.now() < pendUntil) return;
+    busy = true; $('bConfirm').disabled = true; $('bConfirm').textContent = 'جاري قراءة الموقع...';
+    new Promise(function (resolve, reject) {
+      if (!navigator.geolocation) return reject(new Error('الموقع غير مدعوم'));
+      navigator.geolocation.getCurrentPosition(resolve, function (e) { reject(new Error(e.code === 1 ? 'فعّل إذن الموقع' : 'تعذر تحديد الموقع')); },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    }).then(function (pos) {
+      return gs('confirmLocation', { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skewBoot) });
+    }).then(function (r) { toast((r && r.message) || 'تم', !!(r && r.ok)); return refresh(); })
+      .catch(function (e) { toast((e && e.message) || 'فشل التأكيد', false); })
+      .then(function () { busy = false; tick(); });
+  };
+  setInterval(tick, 1000);
+  $('bShot').onclick = capture;
+  $('bCancel').onclick = function () { if (!busy) stopMedia(); };
+  function showTab(name) {
+    ['home', 'req', 'sum'].forEach(function (t) { $(t).classList.toggle('hidden', t !== name); });
+    $('tHome').className = name === 'home' ? 'on' : ''; $('tReq').className = name === 'req' ? 'on' : ''; $('tSum').className = name === 'sum' ? 'on' : '';
+    if (name === 'req') loadMine();
+    if (name === 'sum') loadSummary();
+  }
+  $('tHome').onclick = function () { showTab('home'); };
+  $('tReq').onclick = function () { showTab('req'); };
+  $('tSum').onclick = function () { showTab('sum'); };
+  $('sCycle').onchange = function () { loadSummary($('sCycle').value); };
+  $('bPerm').onclick = function () { send($('bPerm'), 'requestPermission', $('pType').value, $('pDate').value); };
+  $('bLeave').onclick = function () { send($('bLeave'), 'requestLeave', { from: $('lFrom').value, to: $('lTo').value, reason: $('lReason').value }); };
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && !busy && token()) refresh(); });
+  setInterval(function () { if (!document.hidden && !busy && token() && $('cam').style.display !== 'flex') refresh(); }, 60000);
+
+  // ---------- تسجيل الدخول (إيميل + PIN) ----------
+  function showLogin(msg) {
+    setToken('');
+    $('login').classList.remove('hidden'); $('app').classList.add('hidden');
+    $('lgMsg').textContent = msg || '';
+    try { $('lgEmail').value = localStorage.getItem('att_email') || ''; } catch (e) { /* تجاهل */ }
+  }
+  $('lgBtn').onclick = function () {
+    var email = $('lgEmail').value.trim(), pin = $('lgPin').value.trim();
+    if (!email || !pin) { $('lgMsg').textContent = 'اكتب الإيميل والرمز'; return; }
+    $('lgBtn').disabled = true; $('lgMsg').textContent = 'جاري الدخول...';
+    callApi({ fn: 'login', args: [email, pin] }).then(function (r) {
+      $('lgBtn').disabled = false;
+      if (!r || !r.ok) { $('lgMsg').textContent = (r && r.message) || 'فشل الدخول'; return; }
+      setToken(r.token); $('lgPin').value = '';
+      try { localStorage.setItem('att_email', email); } catch (e) { /* تجاهل */ }
+      $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+      refresh();
+    }, function () { $('lgBtn').disabled = false; $('lgMsg').textContent = 'تعذر الاتصال، حاول مرة أخرى'; });
+  };
+  $('bLogout').onclick = function () { showLogin(''); };
+  if (token()) { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); refresh(); } else showLogin('');
+})();
+</script>
+</body>
+</html>
