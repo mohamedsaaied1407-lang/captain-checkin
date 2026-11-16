@@ -91,7 +91,7 @@
   <section id="home">
     <div class="card" id="shiftCard">
       <div class="row"><span>الشفت</span><b id="sName">-</b></div>
-      <div class="row"><span id="lTime">الموعد</span><b id="sTime" dir="ltr">-</b></div>
+      <div class="row"><span id="lTime">الموعد</span><b id="sTime">-</b></div>
       <div class="row"><span id="lLoc">الموقع</span><b id="sLoc">-</b></div>
       <div class="row"><span>الحالة</span><span id="sState" class="chip mute">-</span></div>
       <div class="row hidden" id="rIn"><span>وقت الحضور</span><b id="sIn" dir="ltr">-</b></div>
@@ -224,6 +224,13 @@
     } catch (e) { return window.__dev || (window.__dev = 'tmp' + Math.random().toString(16).slice(2, 12)); }
   }
   function hex(buf) { return Array.from(new Uint8Array(buf)).map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  // مواعيد بنظام 12 ساعة (ص/م) مع تنبيه لو الشفت بينتهي في اليوم التالي
+  function t12(s) {
+    var m = /^(\d{1,2}):(\d{2})/.exec(String(s || '')); if (!m) return s || '';
+    var h = Number(m[1]), ap = h >= 12 ? 'م' : 'ص'; h = h % 12; if (h === 0) h = 12;
+    return h + ':' + m[2] + ' ' + ap;
+  }
+  function rng(a, b) { return t12(a) + ' - ' + t12(b) + (b && a && b <= a ? ' (اليوم التالي)' : ''); }
   function cairo(ms) {
     return new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(ms));
   }
@@ -238,13 +245,13 @@
     ['bIn', 'bOut', 'bProof'].forEach(function (b) { $(b).classList.add('hidden'); });
     $('rIn').classList.add('hidden'); $('rProof').classList.add('hidden');
     $('homeMsg').textContent = s.message || '';
-    if (s.shift) { $('sName').textContent = s.shift.name || s.shift.id; $('sTime').textContent = (s.shift.start || '') + ' - ' + (s.shift.end || ''); }
+    if (s.shift) { $('sName').textContent = s.shift.name || s.shift.id; $('sTime').textContent = rng(s.shift.start, s.shift.end); }
     else { $('sName').textContent = '-'; $('sTime').textContent = '-'; }
     $('lTime').textContent = 'الموعد'; $('lLoc').textContent = 'الموقع'; $('sLoc').textContent = '-';
     if (s.mode === 'CAN_CHECKIN' && s.allowedShifts && s.allowedShifts.length > 1) {
       // أكتر من موعد مسموح: البصمة في أي واحد فيهم سليمة
       $('lTime').textContent = 'المواعيد المسموحة';
-      $('sTime').textContent = s.allowedShifts.map(function (x) { return x.start + '-' + x.end; }).join('  أو  ');
+      $('sTime').textContent = s.allowedShifts.map(function (x) { return rng(x.start, x.end); }).join('  أو  ');
     }
     if (s.mode === 'CAN_CHECKIN' && s.locations && s.locations.length) {
       $('lLoc').textContent = s.locations.length > 1 ? 'المواقع المسموحة' : 'الموقع';
@@ -254,7 +261,7 @@
     if (s.mode === 'CAN_CHECKIN') { setChip('جاهز للحضور', 'warn'); $('bIn').classList.remove('hidden'); $('homeMsg').textContent = 'التأخير يُحتسب بعد ' + s.graceMin + ' دقيقة من بداية الشفت'; }
     else if (s.mode === 'OPEN') {
       setChip(s.late > 0 ? 'حاضر (متأخر ' + s.late + ' د)' : 'حاضر', s.late > 0 ? 'warn' : 'ok');
-      $('rIn').classList.remove('hidden'); $('sIn').textContent = s.checkInTime;
+      $('rIn').classList.remove('hidden'); $('sIn').textContent = t12(s.checkInTime);
       $('rProof').classList.remove('hidden'); $('sProof').textContent = 'منذ ' + s.minSinceProof + ' دقيقة';
       $('bOut').classList.remove('hidden');
       $('bProof').classList.remove('hidden'); $('bProof').disabled = !s.proofAllowed;
@@ -479,7 +486,7 @@
         top.appendChild(a); top.appendChild(c); row.appendChild(top);
         if (d.state === 'work') {
           var det = document.createElement('div'); det.className = 'small';
-          det.textContent = d.shifts.map(function (s) { return (s.name || s.id) + ' ' + s.start + ' – ' + s.end; }).join(' / ') + (d.locs.length ? ' · ' + d.locs.join('، ') : '');
+          det.textContent = d.shifts.map(function (s) { return (s.name || s.id) + ' ' + rng(s.start, s.end); }).join(' / ') + (d.locs.length ? ' · ' + d.locs.join('، ') : '');
           row.appendChild(det);
         }
         box.appendChild(row); if (d.date === r.today) todayEl = row;
@@ -515,8 +522,8 @@
         top.appendChild(a); top.appendChild(c); row.appendChild(top);
         var parts = [];
         if (d.loc) parts.push(d.loc);
-        if (d.inTime) parts.push('حضور ' + d.inTime);
-        if (d.outTime) parts.push('انصراف ' + d.outTime);
+        if (d.inTime) parts.push('حضور ' + t12(d.inTime));
+        if (d.outTime) parts.push('انصراف ' + t12(d.outTime));
         if (d.late) parts.push('تأخير ' + fmtMin(d.late));
         if (d.early) parts.push('انصراف مبكر ' + fmtMin(d.early));
         if (d.over) parts.push('أوفر تايم ' + fmtMin(d.over));
