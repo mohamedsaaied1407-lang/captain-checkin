@@ -33,6 +33,14 @@
   #cam video { flex:1; width:100%; object-fit:cover; transform:scaleX(-1); background:#000; min-height:0; }
   #cam .bar { padding:14px; background:#111; color:#fff; font-size:13px; text-align:center; }
   #cam .bar .btn { margin-top:10px; }
+  #loc { position:fixed; inset:0; background:var(--bg); z-index:41; display:none; overflow:auto; padding:14px; }
+  #loc .card { margin:0 auto 12px; max-width:520px; }
+  #loc .thumb { width:84px; height:84px; border-radius:12px; object-fit:cover; transform:none; float:right; margin-left:12px; }
+  .tips { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0; }
+  .tip { background:#fff; border:1px solid var(--line); border-radius:12px; padding:8px 4px; text-align:center; font-size:12px; line-height:1.5; }
+  .tip svg { width:100%; height:92px; }
+  .prog { height:12px; background:#e4e8ee; border-radius:8px; overflow:hidden; margin:10px 0; }
+  .prog i { display:block; height:100%; width:0; background:var(--brand); transition:width .25s linear; }
   .gps { display:flex; justify-content:center; gap:8px; align-items:center; }
   .dot { width:10px; height:10px; border-radius:50%; background:#888; } .dot.g { background:#2ecc71; } .dot.y { background:#f1c40f; } .dot.r { background:#e74c3c; }
   .small { font-size:12px; color:var(--mute); }
@@ -142,9 +150,29 @@
 <div id="cam">
   <video id="video" autoplay playsinline muted></video>
   <div class="bar">
-    <div class="gps"><span class="dot" id="gpsDot"></span><span id="gpsTxt">جاري تحديد الموقع...</span></div>
-    <button class="btn" id="bShot" disabled>التقط الصورة</button>
+    <div>الخطوة 1 من 2: التقط صورتك</div>
+    <button class="btn" id="bShot">التقط الصورة</button>
     <button class="btn ghost" id="bCancel">إلغاء</button>
+  </div>
+</div>
+<div id="loc">
+  <div class="card">
+    <img class="thumb" id="thumb" alt="">
+    <b>الخطوة 2 من 2: تأكيد الموقع</b>
+    <div class="msg" style="text-align:right;padding:4px 0">تم التقاط الصورة. اضغط «ابدأ فحص الموقع» وثبّت موبايلك لمدة <span id="locSecs">35</span> ثانية.</div>
+    <div style="clear:both"></div>
+    <div class="tips">
+      <div class="tip"><svg viewBox="0 0 120 100" fill="none" stroke="#1b2430" stroke-width="2.5" stroke-linecap="round"><rect x="44" y="8" width="32" height="56" rx="5" fill="#fff"/><rect x="48" y="14" width="24" height="40" rx="2" fill="#dbe7ff" stroke="none"/><circle cx="60" cy="59" r="2" fill="#1b2430" stroke="none"/><ellipse cx="38" cy="58" rx="8" ry="6" fill="#f4c9a0"/><ellipse cx="82" cy="58" rx="8" ry="6" fill="#f4c9a0"/><path d="M32 62 Q22 80 26 98M88 62 Q98 80 94 98"/></svg><br>امسك الموبايل بإيديك الاتنين على مستوى صدرك</div>
+      <div class="tip"><svg viewBox="0 0 120 100" fill="none" stroke="#1b2430" stroke-width="2.5" stroke-linecap="round"><rect x="46" y="12" width="28" height="50" rx="5" fill="#fff"/><path d="M34 30 Q28 37 34 44M86 30 Q92 37 86 44M28 26 Q19 37 28 48M92 26 Q101 37 92 48" stroke="#999" stroke-dasharray="3 4"/><circle cx="60" cy="80" r="14" stroke="#c62828" stroke-width="3"/><path d="M50 90 L70 70" stroke="#c62828" stroke-width="3"/></svg><br>ثبّت مكانك ومتمشيش ومتحرّكش الموبايل</div>
+      <div class="tip"><svg viewBox="0 0 120 100" fill="none" stroke="#1b2430" stroke-width="2.5" stroke-linecap="round"><rect x="44" y="6" width="32" height="56" rx="5" fill="#fff"/><path d="M60 18 a8 8 0 1 1 0.1 0 M60 44 L52 28 M60 44 L68 28" fill="#e74c3c" stroke="#e74c3c"/><circle cx="60" cy="24" r="3" fill="#fff" stroke="none"/><circle cx="60" cy="82" r="14" stroke="#c62828" stroke-width="3"/><path d="M50 92 L70 72" stroke="#c62828" stroke-width="3"/></svg><br>اقفل أي تطبيق موقع وهمي وأي برنامج تاني</div>
+    </div>
+    <div id="locBox" style="display:none">
+      <div class="gps"><span class="dot" id="gpsDot"></span><span id="gpsTxt">جاري تحديد الموقع...</span></div>
+      <div class="prog"><i id="locProg"></i></div>
+    </div>
+    <div class="msg" id="locMsg" style="color:var(--bad);font-weight:700"></div>
+    <button class="btn" id="bLoc">ابدأ فحص الموقع</button>
+    <button class="btn ghost" id="bLocCancel">إلغاء</button>
   </div>
 </div>
 <canvas id="canvas" class="hidden"></canvas>
@@ -154,7 +182,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var state = null, busy = false, stream = null, watchId = null, best = null, track = [], gpsStart = 0, kind = null, skewBoot = 0, pendUntil = 0;
+  var state = null, busy = false, stream = null, watchId = null, best = null, track = [], fixes = [], locTimer = null, locStart = 0, kind = null, skewBoot = 0, pendUntil = 0;
 
   // ---------- أدوات ----------
   var API_URL = 'https://script.google.com/macros/s/AKfycbwkEnaZPoe_e5fXMu8cwbO9B5SDDlAsA_FdSH2p3quk7y_4zn0Wnj5GKwoF0L356B-04w/exec';
@@ -259,37 +287,37 @@
   }
 
   // ---------- الكاميرا والموقع ----------
-  function gpsUi(fix) {
-    var dot = $('gpsDot'), txt = $('gpsTxt');
-    if (!fix) { dot.className = 'dot'; txt.textContent = 'جاري تحديد الموقع...'; return; }
-    var a = Math.round(fix.coords.accuracy);
-    dot.className = 'dot ' + (a <= 15 ? 'g' : a <= 25 ? 'y' : 'r');
-    txt.textContent = 'دقة الموقع: ' + a + ' م' + (a > 25 ? ' (ضعيفة، اخرج لمكان مفتوح)' : '');
-    var waiting = Date.now() - gpsStart < 8000;
-    if (waiting) txt.textContent = 'جاري فحص الموقع... ثابت مكانك';
-    $('bShot').disabled = a > 25 || waiting;
-  }
-  function startGps() {
-    best = null; track = []; gpsStart = Date.now(); gpsUi(null); $('bShot').disabled = true;
-    setTimeout(function () { if (best) gpsUi(best); }, 8100);
-    if (!navigator.geolocation) { $('gpsTxt').textContent = 'الموقع غير مدعوم'; return; }
-    watchId = navigator.geolocation.watchPosition(function (p) {
-      track.push([p.timestamp, p.coords.latitude, p.coords.longitude, p.coords.accuracy]); if (track.length > 40) track.shift();
-      if (!best || p.coords.accuracy <= best.coords.accuracy || p.timestamp - best.timestamp > 20000) best = p;
-      gpsUi(best);
-    }, function (e) { $('gpsTxt').textContent = e.code === 1 ? 'فعّل إذن الموقع من إعدادات المتصفح' : 'تعذر تحديد الموقع'; $('gpsDot').className = 'dot r'; },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  var LOC_SECS = 35, MAX_ACC = 25;
+  function stopLoc() {
+    if (locTimer) { clearInterval(locTimer); locTimer = null; }
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
   }
   function stopMedia() {
-    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    stopLoc();
     if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
-    $('cam').style.display = 'none'; $('video').srcObject = null;
+    $('cam').style.display = 'none'; $('loc').style.display = 'none'; $('video').srcObject = null;
   }
-  function freshFix() {
-    return new Promise(function (resolve, reject) {
-      if (best && Date.now() - best.timestamp < 12000) return resolve(best);
-      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 });
-    });
+  function resetLoc() {
+    fixes = []; track = []; best = null;
+    $('bLoc').disabled = false; $('bLoc').textContent = 'ابدأ فحص الموقع';
+    $('locBox').style.display = 'none'; $('locProg').style.width = '0'; $('locMsg').textContent = ''; $('gpsDot').className = 'dot';
+    $('locSecs').textContent = LOC_SECS;
+  }
+  function locFail(msg) {
+    stopLoc(); $('locMsg').textContent = msg; $('locBox').style.display = 'none';
+    $('bLoc').disabled = false; $('bLoc').textContent = 'إعادة فحص الموقع';
+  }
+  // نفس منطق السيرفر: قفزة > 300 م بسرعة مستحيلة بين قراءتين
+  function localConflict(tr) {
+    for (var i = 1; i < tr.length; i++) {
+      var d = dist(tr[i - 1][1], tr[i - 1][2], tr[i][1], tr[i][2]), s = d / Math.max(0.5, (tr[i][0] - tr[i - 1][0]) / 1000);
+      if (d > 300 && s > 70) return true;
+    }
+    return false;
+  }
+  function dist(a, b, c, d) {
+    var r = 6371000, t = Math.PI / 180, x = (c - a) * t, y = (d - b) * t, q = Math.sin(x / 2) * Math.sin(x / 2) + Math.cos(a * t) * Math.cos(c * t) * Math.sin(y / 2) * Math.sin(y / 2);
+    return 2 * r * Math.asin(Math.sqrt(q));
   }
 
   function openCamera(k) {
@@ -297,7 +325,7 @@
     kind = k;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('الكاميرا غير متاحة في هذا المتصفح', false); return; }
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }, audio: false }).then(function (s) {
-      stream = s; $('video').srcObject = s; $('cam').style.display = 'flex'; startGps();
+      stream = s; $('video').srcObject = s; $('loc').style.display = 'none'; $('cam').style.display = 'flex';
     }).catch(function (e) {
       var n = (e && e.name) || 'Error', why = {
         NotAllowedError: 'تم رفض إذن الكاميرا أو الصفحة ممنوعة من استخدامها. اسمح بالكاميرا من إعدادات الموقع في المتصفح ثم أعد تحميل الصفحة',
@@ -306,27 +334,67 @@
         OverconstrainedError: 'إعدادات الكاميرا غير مدعومة في هذا الجهاز',
         SecurityError: 'المتصفح منع الكاميرا في هذه الصفحة'
       }[n] || 'تعذر تشغيل الكاميرا';
-      toast(why + ' (' + n + ': ' + ((e && e.message) || '') + ')', false);
+      toast(why + ' (' + n + ')', false);
     });
   }
 
-  // ---------- الالتقاط والإرسال ----------
-  function capture() {
-    if (busy) return; busy = true; $('bShot').disabled = true; $('bShot').textContent = 'جاري الإرسال...';
-    var dev = deviceId(), t0 = Date.now(), challenge, pos, skew = 0;
+  // الخطوة 1: التقاط الصورة (بدون ختم) ثم الانتقال لشاشة الموقع
+  function shoot() {
+    var v = $('video'), cv = $('canvas'), w = v.videoWidth, h = v.videoHeight;
+    if (!w || !h) { toast('الكاميرا لم تجهز بعد', false); return; }
+    var sc = Math.min(1, 640 / w); cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
+    var g = cv.getContext('2d');
+    g.save(); g.translate(cv.width, 0); g.scale(-1, 1); g.drawImage(v, 0, 0, cv.width, cv.height); g.restore(); // نفس اللي شافه الكابتن
+    $('thumb').src = cv.toDataURL('image/jpeg', 0.5);
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    $('video').srcObject = null; $('cam').style.display = 'none';
+    resetLoc(); $('loc').style.display = 'block';
+  }
+
+  // الخطوة 2: فحص الموقع لمدة LOC_SECS ثانية
+  function startLoc() {
+    if (busy) return;
+    if (!navigator.geolocation) { locFail('الموقع غير مدعوم في هذا المتصفح'); return; }
+    fixes = []; track = []; best = null; locStart = Date.now();
+    $('locMsg').textContent = ''; $('bLoc').disabled = true; $('bLoc').textContent = 'جاري الفحص... ثبّت الموبايل';
+    $('locBox').style.display = 'block'; $('locProg').style.width = '0'; $('gpsDot').className = 'dot'; $('gpsTxt').textContent = 'جاري تحديد الموقع...';
+    watchId = navigator.geolocation.watchPosition(function (p) {
+      fixes.push(p); if (fixes.length > 150) fixes.shift();
+      track.push([p.timestamp, p.coords.latitude, p.coords.longitude, p.coords.accuracy]); if (track.length > 150) track.shift();
+      var a = Math.round(p.coords.accuracy);
+      $('gpsDot').className = 'dot ' + (a <= 15 ? 'g' : a <= MAX_ACC ? 'y' : 'r');
+    }, function (e) {
+      locFail(e.code === 1 ? 'فعّل إذن الموقع من إعدادات المتصفح ثم أعد الفحص' : 'تعذر تحديد الموقع، اخرج لمكان مفتوح وأعد الفحص');
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    locTimer = setInterval(function () {
+      var e = (Date.now() - locStart) / 1000;
+      $('locProg').style.width = Math.min(100, e / LOC_SECS * 100) + '%';
+      $('gpsTxt').textContent = 'ثبّت الموبايل... باقي ' + Math.max(0, Math.ceil(LOC_SECS - e)) + ' ثانية';
+      if (e >= LOC_SECS) finishLoc();
+    }, 250);
+  }
+  function finishLoc() {
+    stopLoc();
+    if (!fixes.length) return locFail('لم تصل أي قراءة موقع. اخرج لمكان مفتوح وأعد الفحص');
+    if (localConflict(track)) return locFail('قراءات الموقع متضاربة: جهازك يرسل مكانين مختلفين. أوقف أي تطبيق موقع وهمي ثم أعد الفحص');
+    var now = Date.now(), recent = fixes.filter(function (p) { return now - p.timestamp < 10000; });
+    if (!recent.length) return locFail('قراءة الموقع قديمة. أعد الفحص');
+    recent.sort(function (a, b) { return a.coords.accuracy - b.coords.accuracy; });
+    var pos = recent[0];
+    if (pos.coords.accuracy > MAX_ACC) return locFail('دقة الموقع ضعيفة (' + Math.round(pos.coords.accuracy) + ' م). اخرج لمكان مفتوح وأعد الفحص');
+    submit(pos);
+  }
+
+  // ---------- الإرسال ----------
+  function submit(pos) {
+    if (busy) return; busy = true; $('bLoc').disabled = true; $('bLoc').textContent = 'جاري الإرسال...';
+    var dev = deviceId(), t0 = Date.now(), challenge, skew = 0, cv = $('canvas');
     gs('getChallenge', dev).then(function (c) {
       if (!c || !c.ok) throw new Error((c && c.message) || 'تعذر بدء العملية');
       challenge = c;
       // فرق ساعة الجهاز عن السيرفر، بتعويض نصف زمن الاتصال
       skew = (c.serverNow + (Date.now() - t0) / 2) - Date.now();
-      return freshFix();
-    }).then(function (p) {
-      pos = p;
-      var v = $('video'), cv = $('canvas'), w = v.videoWidth, h = v.videoHeight;
-      if (!w || !h) throw new Error('الكاميرا لم تجهز بعد');
-      var maxW = 640, sc = Math.min(1, maxW / w); cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
       var g = cv.getContext('2d');
-      g.save(); g.translate(cv.width, 0); g.scale(-1, 1); g.drawImage(v, 0, 0, cv.width, cv.height); g.restore(); // نفس اللي شافه الكابتن
       var lines = [cairo(Date.now() + skew), state.name, pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6) + ' ±' + Math.round(pos.coords.accuracy) + 'م', '#' + challenge.nonce].concat(kind === 'dispatch' ? ['منطقة الديسباتش'] : []);
       var fs = Math.max(12, Math.round(cv.width / 36)), bh = lines.length * (fs + 4) + 8;
       g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(0, cv.height - bh, cv.width, bh);
@@ -343,7 +411,7 @@
       });
     }).then(function (img) {
       var payload = { nonce: challenge.nonce, deviceId: dev, photo: img.b64, sha: img.sha,
-        lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skew), alt: pos.coords.altitude, track: track.slice(-30) };
+        lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skew), alt: pos.coords.altitude, track: track.slice(-60) };
       var fn = kind === 'in' ? 'recordCheckIn' : kind === 'out' ? 'recordCheckOut' : kind === 'dispatch' ? 'submitDispatchPhoto' : 'recordProof';
       return gs(fn, payload);
     }).then(function (r) {
@@ -352,7 +420,7 @@
       return refresh();
     }).catch(function (e) {
       stopMedia(); toast((e && e.message) || 'فشل الإرسال، حاول مرة أخرى', false);
-    }).then(function () { busy = false; $('bShot').textContent = 'التقط الصورة'; });
+    }).then(function () { busy = false; });
   }
 
   // ---------- ملخصي ----------
@@ -437,7 +505,9 @@
       .then(function () { busy = false; tick(); });
   };
   setInterval(tick, 1000);
-  $('bShot').onclick = capture;
+  $('bShot').onclick = shoot;
+  $('bLoc').onclick = startLoc;
+  $('bLocCancel').onclick = function () { if (!busy) stopMedia(); };
   $('bCancel').onclick = function () { if (!busy) stopMedia(); };
   function showTab(name) {
     ['home', 'req', 'sum'].forEach(function (t) { $(t).classList.toggle('hidden', t !== name); });
