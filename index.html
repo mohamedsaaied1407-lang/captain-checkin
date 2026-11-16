@@ -154,7 +154,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var state = null, busy = false, stream = null, watchId = null, best = null, kind = null, skewBoot = 0, pendUntil = 0;
+  var state = null, busy = false, stream = null, watchId = null, best = null, track = [], gpsStart = 0, kind = null, skewBoot = 0, pendUntil = 0;
 
   // ---------- أدوات ----------
   var API_URL = 'https://script.google.com/macros/s/AKfycbwkEnaZPoe_e5fXMu8cwbO9B5SDDlAsA_FdSH2p3quk7y_4zn0Wnj5GKwoF0L356B-04w/exec';
@@ -265,12 +265,16 @@
     var a = Math.round(fix.coords.accuracy);
     dot.className = 'dot ' + (a <= 15 ? 'g' : a <= 25 ? 'y' : 'r');
     txt.textContent = 'دقة الموقع: ' + a + ' م' + (a > 25 ? ' (ضعيفة، اخرج لمكان مفتوح)' : '');
-    $('bShot').disabled = a > 25;
+    var waiting = Date.now() - gpsStart < 8000;
+    if (waiting) txt.textContent = 'جاري فحص الموقع... ثابت مكانك';
+    $('bShot').disabled = a > 25 || waiting;
   }
   function startGps() {
-    best = null; gpsUi(null); $('bShot').disabled = true;
+    best = null; track = []; gpsStart = Date.now(); gpsUi(null); $('bShot').disabled = true;
+    setTimeout(function () { if (best) gpsUi(best); }, 8100);
     if (!navigator.geolocation) { $('gpsTxt').textContent = 'الموقع غير مدعوم'; return; }
     watchId = navigator.geolocation.watchPosition(function (p) {
+      track.push([p.timestamp, p.coords.latitude, p.coords.longitude, p.coords.accuracy]); if (track.length > 40) track.shift();
       if (!best || p.coords.accuracy <= best.coords.accuracy || p.timestamp - best.timestamp > 20000) best = p;
       gpsUi(best);
     }, function (e) { $('gpsTxt').textContent = e.code === 1 ? 'فعّل إذن الموقع من إعدادات المتصفح' : 'تعذر تحديد الموقع'; $('gpsDot').className = 'dot r'; },
@@ -339,7 +343,7 @@
       });
     }).then(function (img) {
       var payload = { nonce: challenge.nonce, deviceId: dev, photo: img.b64, sha: img.sha,
-        lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skew) };
+        lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skew), alt: pos.coords.altitude, track: track.slice(-30) };
       var fn = kind === 'in' ? 'recordCheckIn' : kind === 'out' ? 'recordCheckOut' : kind === 'dispatch' ? 'submitDispatchPhoto' : 'recordProof';
       return gs(fn, payload);
     }).then(function (r) {
