@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>اختبار الموقع</title>
+<style>body{font-family:sans-serif;margin:0;padding:14px;background:#f3f5f9;color:#1b2430}button{width:100%;padding:16px;margin:6px 0;border:0;border-radius:12px;font-size:17px;font-weight:700;color:#fff;background:#ff5a00}button.d{background:#1b2430}pre{background:#fff;border-radius:10px;padding:10px;font-size:11px;white-space:pre-wrap;word-break:break-all;direction:ltr;text-align:left;max-height:60vh;overflow:auto}#st{font-weight:700;margin:8px 0}</style></head>
+<body>
+<h3>اختبار إشارات الموقع</h3>
+<div>اكتب اسم الحالة (مثلاً: fake-on أو fake-off) ثم ابدأ. ابقَ ثابتاً 20 ثانية.</div>
+<input id="lbl" value="fake-on" style="width:100%;padding:12px;margin:8px 0;font-size:16px;direction:ltr">
+<button id="go">ابدأ الاختبار (20 ثانية)</button>
+<div id="st"></div>
+<button class="d" id="cp" style="display:none">نسخ النتيجة</button>
+<pre id="out"></pre>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+function R(n,d){var p=Math.pow(10,d||2);return Math.round(n*p)/p}
+function hav(a,b,c,d){var r=6371000,t=Math.PI/180,x=(c-a)*t,y=(d-b)*t,h=Math.sin(x/2)*Math.sin(x/2)+Math.cos(a*t)*Math.cos(c*t)*Math.sin(y/2)*Math.sin(y/2);return 2*r*Math.asin(Math.sqrt(h))}
+function sd(a){if(a.length<2)return 0;var m=a.reduce(function(s,x){return s+x},0)/a.length;return Math.sqrt(a.reduce(function(s,x){return s+(x-m)*(x-m)},0)/a.length)}
+function uniq(a){return a.filter(function(x,i){return a.indexOf(x)===i}).length}
+var fixes=[],motion=[],orient=[],watch=null;
+function onMotion(e){var g=e.accelerationIncludingGravity;if(g&&g.x!=null)motion.push(Math.sqrt(g.x*g.x+g.y*g.y+g.z*g.z));}
+function onOri(e){if(e.alpha!=null)orient.push(e.alpha)}
+$('go').onclick=function(){
+  fixes=[];motion=[];orient=[];$('out').textContent='';$('cp').style.display='none';
+  $('st').textContent='جاري الجمع... لا تحرّك الموبايل';
+  window.addEventListener('devicemotion',onMotion);window.addEventListener('deviceorientation',onOri);
+  var t0=Date.now();
+  watch=navigator.geolocation.watchPosition(function(p){
+    var c=p.coords;fixes.push({t:p.timestamp,skew:p.timestamp-Date.now(),lat:c.latitude,lng:c.longitude,acc:c.accuracy,alt:c.altitude,altAcc:c.altitudeAccuracy,hdg:c.heading,spd:c.speed});
+  },function(e){$('st').textContent='خطأ GPS: '+e.code+' '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+  setTimeout(finish,20000);
+};
+async function finish(){
+  navigator.geolocation.clearWatch(watch);
+  window.removeEventListener('devicemotion',onMotion);window.removeEventListener('deviceorientation',onOri);
+  $('st').textContent='جاري جمع باقي البيانات...';
+  var o={label:$('lbl').value,at:new Date().toISOString(),n:fixes.length};
+  var lat=fixes.map(function(f){return f.lat}),lng=fixes.map(function(f){return f.lng}),acc=fixes.map(function(f){return f.acc});
+  var iv=[];for(var i=1;i<fixes.length;i++)iv.push(fixes[i].t-fixes[i-1].t);
+  var cl=lat.length?lat[0]:0,cg=lng.length?lng[0]:0;
+  o.gps={distinctLatLng:uniq(fixes.map(function(f){return f.lat+','+f.lng})),
+    jitterM:{lat:R(sd(lat)*111000,2),lng:R(sd(lng)*111000*Math.cos(cl*Math.PI/180),2)},
+    spreadM:R(Math.max.apply(null,fixes.map(function(f){return hav(cl,cg,f.lat,f.lng)}).concat([0])),2),
+    acc:{min:R(Math.min.apply(null,acc)),max:R(Math.max.apply(null,acc)),distinct:uniq(acc)},
+    altNull:fixes.filter(function(f){return f.alt==null}).length,altZero:fixes.filter(function(f){return f.alt===0}).length,
+    altAccNull:fixes.filter(function(f){return f.altAcc==null}).length,
+    spdNull:fixes.filter(function(f){return f.spd==null}).length,hdgNull:fixes.filter(function(f){return f.hdg==null}).length,
+    skewMs:{min:Math.min.apply(null,fixes.map(function(f){return f.skew})),max:Math.max.apply(null,fixes.map(function(f){return f.skew}))},
+    intervalMs:{avg:iv.length?R(iv.reduce(function(s,x){return s+x},0)/iv.length,0):null,sd:R(sd(iv),0),distinct:uniq(iv)},
+    decimals:fixes.length?String(fixes[0].lat).split('.')[1].length:null};
+  o.motion={samples:motion.length,mean:R(motion.reduce(function(s,x){return s+x},0)/(motion.length||1),3),sd:R(sd(motion),4)};
+  o.orient={samples:orient.length,sd:R(sd(orient),3)};
+  o.first=fixes[0]||null;o.last=fixes[fixes.length-1]||null;
+  var nc=navigator.connection||{};o.net={type:nc.type,eff:nc.effectiveType,rtt:nc.rtt,down:nc.downlink,save:nc.saveData};
+  o.env={tz:Intl.DateTimeFormat().resolvedOptions().timeZone,tzOffset:new Date().getTimezoneOffset(),lang:navigator.languages,ua:navigator.userAgent,plat:navigator.platform,mobile:navigator.userAgentData?navigator.userAgentData.mobile:null,touch:navigator.maxTouchPoints,cores:navigator.hardwareConcurrency,mem:navigator.deviceMemory,scr:screen.width+'x'+screen.height,dpr:window.devicePixelRatio,online:navigator.onLine,webdriver:navigator.webdriver};
+  try{var b=await navigator.getBattery();o.battery={level:b.level,charging:b.charging}}catch(e){o.battery=null}
+  try{var pm=await navigator.permissions.query({name:'geolocation'});o.perm=pm.state}catch(e){o.perm=null}
+  try{var r=await fetch('https://ipwho.is/');var j=await r.json();o.ip={ip:j.ip,country:j.country_code,region:j.region,city:j.city,lat:j.latitude,lng:j.longitude,tz:j.timezone&&j.timezone.id,isp:j.connection&&j.connection.isp,org:j.connection&&j.connection.org};
+    if(fixes.length)o.ip.distFromGpsKm=R(hav(j.latitude,j.longitude,fixes[0].lat,fixes[0].lng)/1000,1);
+    o.ip.tzMatchesDevice=o.ip.tz===o.env.tz}catch(e){o.ip='فشل: '+e.message}
+  var s=JSON.stringify(o,null,1);$('out').textContent=s;$('cp').style.display='block';$('st').textContent='تم. اضغط "نسخ النتيجة" وابعتها.';
+}
+$('cp').onclick=function(){var t=$('out').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){$('st').textContent='تم النسخ'},function(){var r=document.createRange();r.selectNodeContents($('out'));var s=getSelection();s.removeAllRanges();s.addRange(r);$('st').textContent='حدّد النص وانسخه يدوياً'})};
+})();
+</script></body></html>
