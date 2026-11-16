@@ -51,6 +51,11 @@
   .stat.warn b { color:var(--warn); } .stat.bad b { color:var(--bad); } .stat.ok b { color:var(--ok); }
   .drow { padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .drow:last-child { border-bottom:0; }
+  .sday { padding:10px 8px; border-bottom:1px solid var(--line); font-size:13px; border-radius:8px; }
+  .sday.today { background:#fff4ea; border:1px solid var(--brand); }
+  .sday.past { opacity:.55; }
+  .sday .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
+  .tabs button { padding:11px 4px; }
   .drow .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
   .hidden { display:none !important; }
 </style>
@@ -79,6 +84,7 @@
   <div class="tabs">
     <button id="tHome" class="on">الرئيسية</button>
     <button id="tReq">طلباتي</button>
+    <button id="tSch">جدولي</button>
     <button id="tSum">ملخصي</button>
   </div>
 
@@ -102,6 +108,10 @@
       <button class="btn dark hidden" id="bProof">إرسال إثبات تواجد</button>
       <button class="btn hidden" id="bOut">تسجيل الانصراف</button>
     </div>
+  </section>
+
+  <section id="sch" class="hidden">
+    <div class="card"><b>جدول شغلي</b><div class="small" id="schNote" style="margin:4px 0 8px"></div><div id="schDays">جاري التحميل...</div></div>
   </section>
 
   <section id="sum" class="hidden">
@@ -150,7 +160,7 @@
 <div id="cam">
   <video id="video" autoplay playsinline muted></video>
   <div class="bar">
-    <div>الخطوة 1 من 2: التقط صورتك</div>
+    <div id="camTitle" style="font-weight:700;line-height:1.7">التقط صورتك</div>
     <button class="btn" id="bShot">التقط الصورة</button>
     <button class="btn ghost" id="bCancel">إلغاء</button>
   </div>
@@ -158,7 +168,7 @@
 <div id="loc">
   <div class="card">
     <img class="thumb" id="thumb" alt="">
-    <b>الخطوة 2 من 2: تأكيد الموقع</b>
+    <b id="locTitle">الخطوة 2 من 2: تأكيد الموقع</b>
     <div class="msg" style="text-align:right;padding:4px 0">تم التقاط الصورة. اضغط «ابدأ فحص الموقع» وثبّت موبايلك لمدة <span id="locSecs">35</span> ثانية.</div>
     <div style="clear:both"></div>
     <div class="tips">
@@ -248,7 +258,7 @@
       $('rProof').classList.remove('hidden'); $('sProof').textContent = 'منذ ' + s.minSinceProof + ' دقيقة';
       $('bOut').classList.remove('hidden');
       $('bProof').classList.remove('hidden'); $('bProof').disabled = !s.proofAllowed;
-      $('homeMsg').textContent = s.minSinceProof >= 30 ? 'مطلوب إرسال إثبات تواجد الآن'
+      $('homeMsg').textContent = s.minSinceProof >= (s.proofEveryMin || 30) ? 'مطلوب إرسال إثبات تواجد الآن'
         : (s.location ? 'الانصراف وإثبات التواجد لازم يكونوا من نفس موقع الحضور: ' + s.location : '');
     }
     else if (s.mode === 'DONE') setChip('تم', 'ok');
@@ -295,7 +305,7 @@
   function stopMedia() {
     stopLoc();
     if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
-    $('cam').style.display = 'none'; $('loc').style.display = 'none'; $('video').srcObject = null;
+    $('cam').style.display = 'none'; $('loc').style.display = 'none'; $('video').srcObject = null; shots = [];
   }
   function resetLoc() {
     fixes = []; track = []; best = null;
@@ -320,34 +330,52 @@
     return 2 * r * Math.asin(Math.sqrt(q));
   }
 
-  function openCamera(k) {
-    if (busy) return;
-    kind = k;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('الكاميرا غير متاحة في هذا المتصفح', false); return; }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }, audio: false }).then(function (s) {
-      stream = s; $('video').srcObject = s; $('loc').style.display = 'none'; $('cam').style.display = 'flex';
+  // مراحل التصوير: إثبات التواجد = صورتين (خلفية للمارت/ركنة المناديب ثم أمامية أمام الديسباتش)، والباقي صورة أمامية واحدة
+  var shots = [], stage = 0;
+  function stagesFor(k) {
+    if (k === 'proof') return [
+      { facing: 'environment', title: 'صوّر المارت أو ركنة المناديب (لو في زحمة) بالكاميرا الخلفية', label: 'صورة المارت / ركنة المناديب' },
+      { facing: 'user', title: 'التقط صورة ليك أمام منطقة الديسباتش', label: 'صورتك أمام منطقة الديسباتش' }];
+    return [{ facing: 'user', title: k === 'dispatch' ? 'التقط صورة في منطقة الديسباتش' : 'التقط صورتك', label: k === 'dispatch' ? 'منطقة الديسباتش' : '' }];
+  }
+  function startStage() {
+    var st = stagesFor(kind)[stage], total = stagesFor(kind).length + 1;
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: st.facing === 'user' ? 'user' : { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 640 } }, audio: false }).then(function (s) {
+      stream = s; var v = $('video'); v.srcObject = s; v.style.transform = st.facing === 'user' ? 'scaleX(-1)' : 'none';
+      $('camTitle').textContent = 'الخطوة ' + (stage + 1) + ' من ' + total + ': ' + st.title;
+      $('loc').style.display = 'none'; $('cam').style.display = 'flex';
     }).catch(function (e) {
       var n = (e && e.name) || 'Error', why = {
         NotAllowedError: 'تم رفض إذن الكاميرا أو الصفحة ممنوعة من استخدامها. اسمح بالكاميرا من إعدادات الموقع في المتصفح ثم أعد تحميل الصفحة',
-        NotFoundError: 'لا توجد كاميرا أمامية في الجهاز',
+        NotFoundError: 'الكاميرا المطلوبة غير موجودة في الجهاز',
         NotReadableError: 'الكاميرا مستخدمة في تطبيق آخر. أغلقه وحاول مرة أخرى',
         OverconstrainedError: 'إعدادات الكاميرا غير مدعومة في هذا الجهاز',
         SecurityError: 'المتصفح منع الكاميرا في هذه الصفحة'
       }[n] || 'تعذر تشغيل الكاميرا';
-      toast(why + ' (' + n + ')', false);
+      stopMedia(); toast(why + ' (' + n + ')', false);
     });
   }
+  function openCamera(k) {
+    if (busy) return;
+    kind = k; stage = 0; shots = [];
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('الكاميرا غير متاحة في هذا المتصفح', false); return; }
+    startStage();
+  }
 
-  // الخطوة 1: التقاط الصورة (بدون ختم) ثم الانتقال لشاشة الموقع
+  // التقاط الصورة (بدون ختم)؛ بعد آخر صورة ننتقل لشاشة الموقع
   function shoot() {
-    var v = $('video'), cv = $('canvas'), w = v.videoWidth, h = v.videoHeight;
+    var v = $('video'), w = v.videoWidth, h = v.videoHeight, sts = stagesFor(kind), st = sts[stage];
     if (!w || !h) { toast('الكاميرا لم تجهز بعد', false); return; }
-    var sc = Math.min(1, 640 / w); cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
+    var cv = document.createElement('canvas'), sc = Math.min(1, 640 / w); cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
     var g = cv.getContext('2d');
-    g.save(); g.translate(cv.width, 0); g.scale(-1, 1); g.drawImage(v, 0, 0, cv.width, cv.height); g.restore(); // نفس اللي شافه الكابتن
+    g.save(); if (st.facing === 'user') { g.translate(cv.width, 0); g.scale(-1, 1); } g.drawImage(v, 0, 0, cv.width, cv.height); g.restore(); // نفس اللي شافه الكابتن
+    shots.push({ cv: cv, label: st.label });
+    if (stage < sts.length - 1) { stage++; startStage(); return; }
     $('thumb').src = cv.toDataURL('image/jpeg', 0.5);
     if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
     $('video').srcObject = null; $('cam').style.display = 'none';
+    $('locTitle').textContent = 'الخطوة ' + (sts.length + 1) + ' من ' + (sts.length + 1) + ': تأكيد الموقع';
     resetLoc(); $('loc').style.display = 'block';
   }
 
@@ -386,22 +414,16 @@
   }
 
   // ---------- الإرسال ----------
-  function submit(pos) {
-    if (busy) return; busy = true; $('bLoc').disabled = true; $('bLoc').textContent = 'جاري الإرسال...';
-    var dev = deviceId(), t0 = Date.now(), challenge, skew = 0, cv = $('canvas');
-    gs('getChallenge', dev).then(function (c) {
-      if (!c || !c.ok) throw new Error((c && c.message) || 'تعذر بدء العملية');
-      challenge = c;
-      // فرق ساعة الجهاز عن السيرفر، بتعويض نصف زمن الاتصال
-      skew = (c.serverNow + (Date.now() - t0) / 2) - Date.now();
-      var g = cv.getContext('2d');
-      var lines = [cairo(Date.now() + skew), state.name, pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6) + ' ±' + Math.round(pos.coords.accuracy) + 'م', '#' + challenge.nonce].concat(kind === 'dispatch' ? ['منطقة الديسباتش'] : []);
-      var fs = Math.max(12, Math.round(cv.width / 36)), bh = lines.length * (fs + 4) + 8;
-      g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(0, cv.height - bh, cv.width, bh);
-      g.fillStyle = '#fff'; g.font = 'bold ' + fs + 'px sans-serif'; g.textAlign = 'right';
-      lines.forEach(function (ln, i) { g.fillText(ln, cv.width - 8, cv.height - bh + (i + 1) * (fs + 4)); });
-      return new Promise(function (res) { cv.toBlob(res, 'image/jpeg', 0.72); });
-    }).then(function (blob) {
+  function stampShot(sh, pos, challenge, skew) {
+    var cv = sh.cv, g = cv.getContext('2d');
+    var lines = [cairo(Date.now() + skew), state.name, pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6) + ' ±' + Math.round(pos.coords.accuracy) + 'م', '#' + challenge.nonce].concat(sh.label ? [sh.label] : []);
+    var fs = Math.max(12, Math.round(cv.width / 36)), bh = lines.length * (fs + 4) + 8;
+    g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(0, cv.height - bh, cv.width, bh);
+    g.fillStyle = '#fff'; g.font = 'bold ' + fs + 'px sans-serif'; g.textAlign = 'right';
+    lines.forEach(function (ln, i) { g.fillText(ln, cv.width - 8, cv.height - bh + (i + 1) * (fs + 4)); });
+  }
+  function shotInfo(cv) {
+    return new Promise(function (res) { cv.toBlob(res, 'image/jpeg', 0.72); }).then(function (blob) {
       if (!blob) throw new Error('فشل التقاط الصورة');
       return blob.arrayBuffer().then(function (buf) {
         if (!(window.crypto && crypto.subtle)) throw new Error('المتصفح لا يدعم التحقق من الصورة');
@@ -409,9 +431,24 @@
           return new Promise(function (res) { var r = new FileReader(); r.onload = function () { res({ b64: r.result, sha: hex(d) }); }; r.readAsDataURL(blob); });
         });
       });
-    }).then(function (img) {
-      var payload = { nonce: challenge.nonce, deviceId: dev, photo: img.b64, sha: img.sha,
+    });
+  }
+  function submit(pos) {
+    if (busy) return; busy = true; $('bLoc').disabled = true; $('bLoc').textContent = 'جاري الإرسال...';
+    var dev = deviceId(), t0 = Date.now(), challenge, skew = 0, imgs = [];
+    gs('getChallenge', dev).then(function (c) {
+      if (!c || !c.ok) throw new Error((c && c.message) || 'تعذر بدء العملية');
+      challenge = c;
+      // فرق ساعة الجهاز عن السيرفر، بتعويض نصف زمن الاتصال
+      skew = (c.serverNow + (Date.now() - t0) / 2) - Date.now();
+      shots.forEach(function (sh) { stampShot(sh, pos, challenge, skew); });
+      return Promise.all(shots.map(function (sh) { return shotInfo(sh.cv); }));
+    }).then(function (arr) {
+      imgs = arr;
+      var front = imgs[imgs.length - 1];
+      var payload = { nonce: challenge.nonce, deviceId: dev, photo: front.b64, sha: front.sha,
         lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skew), alt: pos.coords.altitude, track: track.slice(-60) };
+      if (kind === 'proof') { payload.photo2 = imgs[0].b64; payload.sha2 = imgs[0].sha; }
       var fn = kind === 'in' ? 'recordCheckIn' : kind === 'out' ? 'recordCheckOut' : kind === 'dispatch' ? 'submitDispatchPhoto' : 'recordProof';
       return gs(fn, payload);
     }).then(function (r) {
@@ -421,6 +458,34 @@
     }).catch(function (e) {
       stopMedia(); toast((e && e.message) || 'فشل الإرسال، حاول مرة أخرى', false);
     }).then(function () { busy = false; });
+  }
+
+  // ---------- جدولي ----------
+  function loadSchedule() {
+    var box = $('schDays'); box.textContent = 'جاري التحميل...';
+    gs('getMySchedule').then(function (r) {
+      box.textContent = '';
+      if (!r || !r.ok) { box.textContent = (r && r.message) || 'تعذر التحميل'; return; }
+      if (!r.days.length) { box.textContent = r.message || 'لا يوجد جدول لك بعد'; $('schNote').textContent = ''; return; }
+      $('schNote').textContent = 'الجدول اللي نزّلته الإدارة لك. النهارده: ' + r.today;
+      var todayEl = null;
+      r.days.forEach(function (d) {
+        var row = document.createElement('div'); row.className = 'sday' + (d.date === r.today ? ' today' : d.date < r.today ? ' past' : '');
+        var top = document.createElement('div'); top.className = 'top';
+        var wd = ''; try { wd = new Date(d.date + 'T12:00:00Z').toLocaleDateString('ar-EG', { weekday: 'long', timeZone: 'UTC' }); } catch (e) { wd = ''; }
+        var a = document.createElement('b'); a.textContent = d.date + (wd ? ' — ' + wd : '');
+        var c = document.createElement('span'); c.className = 'chip ' + (d.state === 'work' ? 'ok' : d.state === 'off' ? 'mute' : 'warn');
+        c.textContent = d.state === 'work' ? 'عمل' : d.state === 'off' ? 'إجازة' : 'لم يُحدد بعد';
+        top.appendChild(a); top.appendChild(c); row.appendChild(top);
+        if (d.state === 'work') {
+          var det = document.createElement('div'); det.className = 'small';
+          det.textContent = d.shifts.map(function (s) { return (s.name || s.id) + ' ' + s.start + ' – ' + s.end; }).join(' / ') + (d.locs.length ? ' · ' + d.locs.join('، ') : '');
+          row.appendChild(det);
+        }
+        box.appendChild(row); if (d.date === r.today) todayEl = row;
+      });
+      if (todayEl && todayEl.scrollIntoView) todayEl.scrollIntoView({ block: 'center' });
+    }).catch(function () { box.textContent = 'تعذر التحميل'; });
   }
 
   // ---------- ملخصي ----------
@@ -510,13 +575,15 @@
   $('bLocCancel').onclick = function () { if (!busy) stopMedia(); };
   $('bCancel').onclick = function () { if (!busy) stopMedia(); };
   function showTab(name) {
-    ['home', 'req', 'sum'].forEach(function (t) { $(t).classList.toggle('hidden', t !== name); });
-    $('tHome').className = name === 'home' ? 'on' : ''; $('tReq').className = name === 'req' ? 'on' : ''; $('tSum').className = name === 'sum' ? 'on' : '';
+    ['home', 'req', 'sch', 'sum'].forEach(function (t) { $(t).classList.toggle('hidden', t !== name); });
+    $('tHome').className = name === 'home' ? 'on' : ''; $('tReq').className = name === 'req' ? 'on' : ''; $('tSch').className = name === 'sch' ? 'on' : ''; $('tSum').className = name === 'sum' ? 'on' : '';
+    if (name === 'sch') loadSchedule();
     if (name === 'req') loadMine();
     if (name === 'sum') loadSummary();
   }
   $('tHome').onclick = function () { showTab('home'); };
   $('tReq').onclick = function () { showTab('req'); };
+  $('tSch').onclick = function () { showTab('sch'); };
   $('tSum').onclick = function () { showTab('sum'); };
   $('sCycle').onchange = function () { loadSummary($('sCycle').value); };
   $('bPerm').onclick = function () { send($('bPerm'), 'requestPermission', $('pType').value, $('pDate').value); };
