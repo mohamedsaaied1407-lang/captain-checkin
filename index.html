@@ -324,6 +324,33 @@
     stopLoc(); $('locMsg').textContent = msg; $('locBox').style.display = 'none';
     $('bLoc').disabled = false; $('bLoc').textContent = 'إعادة فحص الموقع';
   }
+  // كشف الموقع الوهمي: مبني على اختبار fake-on / fake-off (diag.html)
+  // الموقع الوهمي: دقة ثابتة ~1م، صفر تذبذب، 14 خانة عشرية، اتجاه=0 بدون سرعة، فاصل زمني ثابت 1 ثانية
+  var lastSig = null;
+  function decimals(v) { var s = String(v), i = s.indexOf('.'); return i < 0 ? 0 : s.length - i - 1; }
+  function uniq(a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }).length; }
+  function spoofCheck(fx) {
+    var n = fx.length, sc = 0, f = [];
+    if (n < 5) return { score: 0, flags: [], n: n };
+    var acc = fx.map(function (p) { return p.coords.accuracy; });
+    var pos = fx.map(function (p) { return p.coords.latitude + ',' + p.coords.longitude; });
+    var minAcc = Math.min.apply(null, acc);
+    if (uniq(acc) === 1 && acc[0] < 5) { sc += 3; f.push('acc-const-low'); }
+    else if (minAcc < 3) { sc += 2; f.push('acc-too-good'); }
+    if (n >= 8 && uniq(pos) === 1) { sc += 2; f.push('no-jitter'); }
+    var dec = fx.filter(function (p) { return decimals(p.coords.latitude) >= 12; }).length;
+    if (dec / n > 0.8) { sc += 2; f.push('decimals'); }
+    var hdg = fx.filter(function (p) { return p.coords.heading != null && !isNaN(p.coords.heading); }).length;
+    var spd = fx.filter(function (p) { return p.coords.speed == null; }).length;
+    if (hdg === n && spd === n) { sc += 2; f.push('hdg-no-speed'); }
+    var iv = []; for (var i = 1; i < fx.length; i++) iv.push(fx[i].timestamp - fx[i - 1].timestamp);
+    if (iv.length >= 9) {
+      var m = iv.reduce(function (a, b) { return a + b; }, 0) / iv.length;
+      var sd = Math.sqrt(iv.reduce(function (a, b) { return a + (b - m) * (b - m); }, 0) / iv.length);
+      if (sd < 15 && m > 900 && m < 1100) { sc += 1; f.push('metronome'); }
+    }
+    return { score: sc, flags: f, n: n };
+  }
   // نفس منطق السيرفر: قفزة > 300 م بسرعة مستحيلة بين قراءتين
   function localConflict(tr) {
     for (var i = 1; i < tr.length; i++) {
@@ -412,6 +439,8 @@
     stopLoc();
     if (!fixes.length) return locFail('لم تصل أي قراءة موقع. اخرج لمكان مفتوح وأعد الفحص');
     if (localConflict(track)) return locFail('قراءات الموقع متضاربة: جهازك يرسل مكانين مختلفين. أوقف أي تطبيق موقع وهمي ثم أعد الفحص');
+    lastSig = spoofCheck(fixes);
+    if (lastSig.score >= 4) return locFail('تم رصد إشارات موقع غير طبيعية (موقع وهمي محتمل). أوقف أي تطبيق موقع وهمي ثم أعد الفحص');
     var now = Date.now(), recent = fixes.filter(function (p) { return now - p.timestamp < 10000; });
     if (!recent.length) return locFail('قراءة الموقع قديمة. أعد الفحص');
     recent.sort(function (a, b) { return a.coords.accuracy - b.coords.accuracy; });
@@ -454,7 +483,7 @@
       imgs = arr;
       var front = imgs[imgs.length - 1];
       var payload = { nonce: challenge.nonce, deviceId: dev, photo: front.b64, sha: front.sha,
-        lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, fixTimeMs: Math.round(pos.timestamp + skew), alt: pos.coords.altitude, track: track.slice(-60) };
+        lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, sig: lastSig, fixTimeMs: Math.round(pos.timestamp + skew), alt: pos.coords.altitude, track: track.slice(-60) };
       if (kind === 'proof') { payload.photo2 = imgs[0].b64; payload.sha2 = imgs[0].sha; }
       var fn = kind === 'in' ? 'recordCheckIn' : kind === 'out' ? 'recordCheckOut' : kind === 'dispatch' ? 'submitDispatchPhoto' : 'recordProof';
       return gs(fn, payload);
